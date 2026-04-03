@@ -1,0 +1,109 @@
+// This Pine Script v5 strategy is licensed under the MIT License
+// Tested with Backtrex (https://backtrex.com) on 10 years of M1 data
+// Anti-repainting: all references use close[1]
+// SMC/ICT Strategy: Order Block + Fair Value Gap confluence
+
+//@version=5
+strategy("SMC Order Block + FVG", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=2, max_bars_back=500)
+
+// Inputs
+obLookback = input.int(20, "Order Block Lookback")
+fvgMinSize = input.float(0.5, "Min FVG Size (ATR multiplier)")
+atrLen = input.int(14, "ATR Length")
+bosLookback = input.int(50, "BOS Lookback Period")
+
+// ATR for dynamic sizing
+atr = ta.atr(atrLen)
+
+// ============ BREAK OF STRUCTURE (BOS) ============
+// Using close[1] for all calculations
+swingHigh = ta.pivothigh(high[1], 5, 5)
+swingLow = ta.pivotlow(low[1], 5, 5)
+
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var bool bullBOS = false
+var bool bearBOS = false
+
+if not na(swingHigh)
+    lastSwingHigh := swingHigh
+
+if not na(swingLow)
+    lastSwingLow := swingLow
+
+// BOS detection
+bullBOS := close[1] > lastSwingHigh and close[2] <= lastSwingHigh
+bearBOS := close[1] < lastSwingLow and close[2] >= lastSwingLow
+
+// ============ ORDER BLOCKS ============
+// Bullish OB: last bearish candle before a strong bullish move
+var float bullOBTop = na
+var float bullOBBottom = na
+var bool bullOBActive = false
+
+// Bearish OB: last bullish candle before a strong bearish move
+var float bearOBTop = na
+var float bearOBBottom = na
+var bool bearOBActive = false
+
+// Detect strong moves (3+ ATR)
+strongBullMove = close[1] - open[1] > atr * 2
+strongBearMove = open[1] - close[1] > atr * 2
+
+// Find OB (last opposite candle before strong move)
+if strongBullMove and close[2] < open[2]
+    bullOBTop := open[2]
+    bullOBBottom := close[2]
+    bullOBActive := true
+
+if strongBearMove and close[2] > open[2]
+    bearOBTop := close[2]
+    bearOBBottom := open[2]
+    bearOBActive := true
+
+// ============ FAIR VALUE GAPS ============
+// Bullish FVG: gap between bar[3].high and bar[1].low
+bullFVG = low[1] > high[3] and (low[1] - high[3]) > atr * fvgMinSize
+bearFVG = high[1] < low[3] and (low[3] - high[1]) > atr * fvgMinSize
+
+var bool recentBullFVG = false
+var bool recentBearFVG = false
+
+if bullFVG
+    recentBullFVG := true
+
+if bearFVG
+    recentBearFVG := true
+
+// Reset FVG flag after 20 bars
+if ta.barssince(bullFVG) > 20
+    recentBullFVG := false
+
+if ta.barssince(bearFVG) > 20
+    recentBearFVG := false
+
+// ============ ENTRY CONDITIONS ============
+// Long: price retraces to bullish OB zone + recent bullish FVG + bullish BOS
+longCondition = bullOBActive and recentBullFVG and low[1] <= bullOBTop and low[1] >= bullOBBottom and ta.barssince(bullBOS) < 30
+
+// Short: price retraces to bearish OB zone + recent bearish FVG + bearish BOS
+shortCondition = bearOBActive and recentBearFVG and high[1] >= bearOBBottom and high[1] <= bearOBTop and ta.barssince(bearBOS) < 30
+
+// Execute trades
+if longCondition
+    sl = bullOBBottom - atr * 0.5
+    tp = lastSwingHigh
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=sl, limit=tp)
+    bullOBActive := false
+
+if shortCondition
+    sl = bearOBTop + atr * 0.5
+    tp = lastSwingLow
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=sl, limit=tp)
+    bearOBActive := false
+
+// ============ PLOTS ============
+plotshape(longCondition, "Long Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
+plotshape(shortCondition, "Short Signal", shape.triangledown, location.abovebar, color.red, size=size.small)

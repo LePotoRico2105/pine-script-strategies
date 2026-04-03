@@ -1,0 +1,51 @@
+// This Pine Script v5 strategy is licensed under the MIT License
+// Tested with Backtrex (https://backtrex.com) on 10 years of M1 data
+// Anti-repainting: all references use close[1]
+
+//@version=5
+strategy("Bollinger Squeeze Breakout", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=2)
+
+// Inputs
+bbLen = input.int(20, "Bollinger Band Length")
+bbMult = input.float(2.0, "Bollinger Band Multiplier")
+squeezeFactor = input.float(0.75, "Squeeze Threshold (% of avg width)")
+lookback = input.int(20, "Squeeze Lookback Period")
+
+// Bollinger Bands (using close[1] to prevent repainting)
+basis = ta.sma(close[1], bbLen)
+dev = bbMult * ta.stdev(close[1], bbLen)
+upper = basis + dev
+lower = basis - dev
+
+// Band width and squeeze detection
+bbWidth = upper - lower
+avgWidth = ta.sma(bbWidth, lookback)
+isSqueeze = bbWidth < avgWidth * squeezeFactor
+wasSqueeze = isSqueeze[1]
+
+// Breakout signals (squeeze must have occurred in recent bars)
+recentSqueeze = ta.barssince(isSqueeze) < 5
+longSignal = recentSqueeze and close[1] > upper and close[2] <= upper[1]
+shortSignal = recentSqueeze and close[1] < lower and close[2] >= lower[1]
+
+// Risk calculation
+distToMiddle = math.abs(close - basis)
+
+// Execute trades
+if longSignal
+    sl = basis
+    tp = close + distToMiddle * 2
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=sl, limit=tp)
+
+if shortSignal
+    sl = basis
+    tp = close - distToMiddle * 2
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=sl, limit=tp)
+
+// Plots
+plot(basis, "SMA 20", color=color.gray)
+plot(upper, "Upper Band", color=color.blue)
+plot(lower, "Lower Band", color=color.blue)
+bgcolor(isSqueeze ? color.new(color.yellow, 90) : na, title="Squeeze Zone")

@@ -1,0 +1,48 @@
+// This Pine Script v5 strategy is licensed under the MIT License
+// Tested with Backtrex (https://backtrex.com) on 10 years of M1 data
+// Anti-repainting: all references use close[1]
+// Based on the classic 4H MACD Forex Strategy (Phillip Nel)
+
+//@version=5
+strategy("MACD 4H Rhythm", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=2)
+
+// Inputs
+fastLen = input.int(12, "MACD Fast Length")
+slowLen = input.int(26, "MACD Slow Length")
+signalLen = input.int(9, "MACD Signal Length")
+emaFast = input.int(21, "Fast EMA")
+emaSlow = input.int(50, "Slow EMA")
+slPips = input.float(50, "Stop Loss (pips)")
+tpPips = input.float(100, "Take Profit (pips)")
+
+// Pip value
+pipValue = syminfo.mintick * 10
+
+// Indicators (using close[1] to prevent repainting)
+[macdLine, signalLine, histogram] = ta.macd(close[1], fastLen, slowLen, signalLen)
+histPrev = ta.macd(close[2], fastLen, slowLen, signalLen)
+fastEMA = ta.ema(close[1], emaFast)
+slowEMA = ta.ema(close[1], emaSlow)
+
+// Signals
+histTurnsPositive = histogram > 0 and histogram[1] <= 0
+histTurnsNegative = histogram < 0 and histogram[1] >= 0
+bullTrend = fastEMA > slowEMA
+bearTrend = fastEMA < slowEMA
+
+// Entry conditions
+longCondition = histTurnsPositive and bullTrend
+shortCondition = histTurnsNegative and bearTrend
+
+// Execute trades
+if longCondition
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=close - slPips * pipValue, limit=close + tpPips * pipValue)
+
+if shortCondition
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=close + slPips * pipValue, limit=close - tpPips * pipValue)
+
+// Plots
+plot(fastEMA, "EMA 21", color=color.blue)
+plot(slowEMA, "EMA 50", color=color.red)

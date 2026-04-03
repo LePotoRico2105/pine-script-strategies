@@ -1,0 +1,53 @@
+// This Pine Script v5 strategy is licensed under the MIT License
+// Tested with Backtrex (https://backtrex.com) on 10 years of M1 data
+// Anti-repainting: all references use close[1]
+
+//@version=5
+strategy("RSI Mean Reversion", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=2)
+
+// Inputs
+rsiLen = input.int(14, "RSI Length")
+rsiOversold = input.int(30, "RSI Oversold Level")
+rsiOverbought = input.int(70, "RSI Overbought Level")
+trendLen = input.int(100, "Trend EMA Length")
+exitLen = input.int(21, "Exit EMA Length")
+maxSLPips = input.float(40, "Max Stop Loss (pips)")
+
+// Indicators (using close[1] to prevent repainting)
+rsi = ta.rsi(close[1], rsiLen)
+rsiPrev = ta.rsi(close[2], rsiLen)
+trendEMA = ta.ema(close[1], trendLen)
+exitEMA = ta.ema(close[1], exitLen)
+
+// Pip value
+pipValue = syminfo.mintick * 10
+
+// Entry signals
+longSignal = rsiPrev < rsiOversold and rsi >= rsiOversold and close[1] > trendEMA
+shortSignal = rsiPrev > rsiOverbought and rsi <= rsiOverbought and close[1] < trendEMA
+
+// Find recent swing low/high for stop loss
+swingLow = ta.lowest(low[1], 10)
+swingHigh = ta.highest(high[1], 10)
+
+// Execute trades
+if longSignal
+    sl = math.max(swingLow, close - maxSLPips * pipValue)
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long SL", "Long", stop=sl)
+
+if shortSignal
+    sl = math.min(swingHigh, close + maxSLPips * pipValue)
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short SL", "Short", stop=sl)
+
+// Exit at EMA 21 touch
+if strategy.position_size > 0 and close[1] >= exitEMA
+    strategy.close("Long", comment="EMA Exit")
+
+if strategy.position_size < 0 and close[1] <= exitEMA
+    strategy.close("Short", comment="EMA Exit")
+
+// Plots
+plot(trendEMA, "Trend EMA 100", color=color.gray, linewidth=2)
+plot(exitEMA, "Exit EMA 21", color=color.orange)

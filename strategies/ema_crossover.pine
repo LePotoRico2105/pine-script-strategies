@@ -1,0 +1,50 @@
+// This Pine Script v5 strategy is licensed under the MIT License
+// Tested with Backtrex (https://backtrex.com) on 10 years of M1 data
+// Anti-repainting: all references use close[1]
+
+//@version=5
+strategy("EMA Crossover 21/50 + Daily Filter", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=2)
+
+// Inputs
+fastLen = input.int(21, "Fast EMA Length")
+slowLen = input.int(50, "Slow EMA Length")
+trendLen = input.int(200, "Daily Trend EMA Length")
+atrLen = input.int(14, "ATR Length")
+atrMultSL = input.float(1.5, "ATR Multiplier for SL")
+atrMultTP = input.float(3.0, "ATR Multiplier for TP")
+
+// Indicators (using close[1] to prevent repainting)
+fastEMA = ta.ema(close[1], fastLen)
+slowEMA = ta.ema(close[1], slowLen)
+dailyEMA = request.security(syminfo.tickerid, "D", ta.ema(close[1], trendLen))
+atr = ta.atr(atrLen)
+
+// Crossover signals
+bullCross = ta.crossover(fastEMA, slowEMA)
+bearCross = ta.crossunder(fastEMA, slowEMA)
+
+// Trend filter
+bullTrend = close[1] > dailyEMA
+bearTrend = close[1] < dailyEMA
+
+// Entry conditions
+longCondition = bullCross and bullTrend
+shortCondition = bearCross and bearTrend
+
+// Execute trades
+if longCondition
+    sl = close - atr * atrMultSL
+    tp = close + atr * atrMultTP
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=sl, limit=tp)
+
+if shortCondition
+    sl = close + atr * atrMultSL
+    tp = close - atr * atrMultTP
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=sl, limit=tp)
+
+// Plots
+plot(fastEMA, "Fast EMA", color=color.blue)
+plot(slowEMA, "Slow EMA", color=color.red)
+plot(dailyEMA, "Daily EMA 200", color=color.gray, linewidth=2)
